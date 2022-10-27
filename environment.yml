@@ -17,3 +17,4 @@ dependencies: # add packages as needed! It's okay for this to be bloated. Mamba 
   - loguru
   - tqdm
   - pre-commit
+  - nbstripout
