@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-automation"
+version = "0.0.1"
+dependencies = [
+    "pydub",
+    'moviepy',
+    "loguru",
+]
+
+[project.scripts]
+pa = "personal_automation.cli:app"

@@ -1,0 +1,19 @@
+name: personal-automation
+channels:
+  - conda-forge
+dependencies: # add packages as needed! It's okay for this to be bloated. Mamba will take care of solving environments.
+  - python>=3.9
+  - pydub
+  - moviepy
+  - black
+  - pydocstyle
+  - mypy
+  - setuptools
+  - build
+  - typer
+  - pip
+  - ffmpeg
+  - ipykernel
+  - loguru
+  - tqdm
+  - pre-commit
