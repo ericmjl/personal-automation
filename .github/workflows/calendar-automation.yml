@@ -1,0 +1,26 @@
+name: Calendar Guest Automation
+
+on:
+  schedule:
+    # Run every hour during business hours (9 AM to 6 PM EST)
+    - cron: '0 9-18 * * 1-5'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  add-calendar-guests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+
+    - name: Run calendar automation
+      env:
+        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
+      run: uv run .github/scripts/calendar_automation.py
