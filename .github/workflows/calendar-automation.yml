@@ -1,26 +1,32 @@
-name: Calendar Guest Automation
+name: Calendar Automation
 
 on:
   schedule:
-    # Run every hour during business hours (9 AM to 6 PM EST)
-    - cron: '0 9-18 * * 1-5'
-  workflow_dispatch: # Allow manual trigger
+    - cron: '0 */6 * * *'  # Run every 6 hours
+  workflow_dispatch:  # Allow manual triggers
 
 jobs:
-  add-calendar-guests:
+  calendar-automation:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: Call Google Apps Script
+      run: |
+        # Get the web app URL from secrets
+        WEBAPP_URL="${{ secrets.GOOGLE_APPS_SCRIPT_URL }}"
 
-    - name: Set up uv
-      uses: astral-sh/setup-uv@v6
-      with:
-        enable-cache: true
+        if [ -z "$WEBAPP_URL" ]; then
+          echo "❌ GOOGLE_APPS_SCRIPT_URL secret not set"
+          exit 1
+        fi
 
-    - name: Run calendar automation
-      env:
-        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
-      run: uv run .github/scripts/calendar_automation.py
+        echo "🔗 Calling Google Apps Script..."
+        response=$(curl -s "$WEBAPP_URL")
+
+        if [ $? -eq 0 ]; then
+          echo "✅ Script executed successfully"
+          echo "📊 Response: $response"
+        else
+          echo "❌ Failed to execute script"
+          exit 1
+        fi
