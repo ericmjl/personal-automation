@@ -50,40 +50,29 @@ class CalendarAutomation:
         # Load existing token
         if os.path.exists(token_path):
             print(f"📁 Loading existing token from {token_path}")
-            with open(token_path, "rb") as token:
-                creds = pickle.load(token)
+            try:
+                with open(token_path, "rb") as token:
+                    creds = pickle.load(token)
+            except Exception as e:
+                print(f"⚠️  Error loading token file: {e}")
+                print("🗑️  Removing corrupted token file...")
+                os.remove(token_path)
+                creds = None
 
         # If no valid credentials, get new ones
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 print("🔄 Refreshing expired token...")
-                creds.refresh(Request())
+                try:
+                    creds.refresh(Request())
+                    print("✅ Token refreshed successfully")
+                except Exception as e:
+                    print(f"❌ Failed to refresh token: {e}")
+                    print("🔄 Getting new OAuth2 credentials...")
+                    creds = self._get_new_credentials()
             else:
                 print("🔐 Getting new OAuth2 credentials...")
-                # Try to load OAuth2 credentials file
-                oauth2_creds_path = "oauth2_credentials.json"
-                if not os.path.exists(oauth2_creds_path):
-                    raise ValueError(
-                        f"OAuth2 credentials file not found: {oauth2_creds_path}\n"
-                        f"Please download OAuth2 credentials from Google Cloud Console"
-                    )
-
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    oauth2_creds_path, ["https://www.googleapis.com/auth/calendar"]
-                )
-
-                # Check if we're running in GitHub Actions (no browser available)
-                if os.getenv("GITHUB_ACTIONS"):
-                    print("🤖 Running in GitHub Actions - using headless flow")
-                    # For GitHub Actions, we need to use a different approach
-                    # The token should already be provided via secrets
-                    raise ValueError(
-                        "Running in GitHub Actions but no valid token found.\n"
-                        "Please ensure GOOGLE_OAUTH_TOKEN secret is set correctly."
-                    )
-                else:
-                    print("🖥️  Running locally - opening browser for authentication")
-                    creds = flow.run_local_server(port=0)
+                creds = self._get_new_credentials()
 
             # Save credentials for next run (only in local development)
             if not os.getenv("GITHUB_ACTIONS"):
@@ -93,6 +82,33 @@ class CalendarAutomation:
 
         print("✅ Successfully loaded OAuth2 credentials")
         return creds
+
+    def _get_new_credentials(self) -> Credentials:
+        """Get new OAuth2 credentials through browser authentication."""
+        # Try to load OAuth2 credentials file
+        oauth2_creds_path = "oauth2_credentials.json"
+        if not os.path.exists(oauth2_creds_path):
+            raise ValueError(
+                f"OAuth2 credentials file not found: {oauth2_creds_path}\n"
+                f"Please download OAuth2 credentials from Google Cloud Console"
+            )
+
+        flow = InstalledAppFlow.from_client_secrets_file(
+            oauth2_creds_path, ["https://www.googleapis.com/auth/calendar"]
+        )
+
+        # Check if we're running in GitHub Actions (no browser available)
+        if os.getenv("GITHUB_ACTIONS"):
+            print("🤖 Running in GitHub Actions - using headless flow")
+            # For GitHub Actions, we need to use a different approach
+            # The token should already be provided via secrets
+            raise ValueError(
+                "Running in GitHub Actions but no valid token found.\n"
+                "Please ensure GOOGLE_OAUTH_TOKEN secret is set correctly."
+            )
+        else:
+            print("🖥️  Running locally - opening browser for authentication")
+            return flow.run_local_server(port=0)
 
     def _list_calendars(self):
         """List available calendars for debugging."""
