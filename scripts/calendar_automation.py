@@ -18,7 +18,10 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 
-from google.oauth2.service_account import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+import pickle
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -27,6 +30,7 @@ class CalendarAutomation:
     def __init__(self):
         self.primary_email = os.getenv("PRIMARY_EMAIL")
         self.secondary_email = os.getenv("SECONDARY_EMAIL")
+        self.tertiary_email = os.getenv("TERTIARY_EMAIL", "eric.ma@modernatx.com")
         self.credentials = self._get_credentials()
         self.service = build("calendar", "v3", credentials=self.credentials)
 
@@ -39,56 +43,56 @@ class CalendarAutomation:
         self._list_calendars()
 
     def _get_credentials(self) -> Credentials:
-        """Get Google API credentials from default location or environment variable."""
-        # Try to read from default location first
-        default_creds_path = "google-credentials.json"
+        """Get Google API credentials using OAuth2."""
+        creds = None
+        token_path = "token.pickle"
 
-        if os.path.exists(default_creds_path):
-            print(f"📁 Reading credentials from {default_creds_path}")
-            try:
-                # Use Google Auth's built-in file loading method
-                credentials = Credentials.from_service_account_file(
-                    default_creds_path,
-                    scopes=["https://www.googleapis.com/auth/calendar"],
-                )
-                print("✅ Successfully loaded credentials from file")
-                return credentials
-            except (json.JSONDecodeError, IOError) as e:
-                print(f"⚠️  Error reading {default_creds_path}: {e}")
-                # Fall through to environment variable
-            except Exception as e:
-                print(f"❌ Error creating credentials from {default_creds_path}: {e}")
-                print(f"   Error type: {type(e).__name__}")
-                # Fall through to environment variable
+        # Load existing token
+        if os.path.exists(token_path):
+            print(f"📁 Loading existing token from {token_path}")
+            with open(token_path, "rb") as token:
+                creds = pickle.load(token)
 
-        # Fall back to environment variable
-        creds_json = os.getenv("GOOGLE_CREDENTIALS")
-        if creds_json:
-            print("🔧 Reading credentials from GOOGLE_CREDENTIALS environment variable")
-            try:
-                creds_info = json.loads(creds_json)
-
-                # Fix private key formatting - replace \n with actual newlines
-                if "private_key" in creds_info:
-                    creds_info["private_key"] = creds_info["private_key"].replace(
-                        "\\n", "\n"
+        # If no valid credentials, get new ones
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                print("🔄 Refreshing expired token...")
+                creds.refresh(Request())
+            else:
+                print("🔐 Getting new OAuth2 credentials...")
+                # Try to load OAuth2 credentials file
+                oauth2_creds_path = "oauth2_credentials.json"
+                if not os.path.exists(oauth2_creds_path):
+                    raise ValueError(
+                        f"OAuth2 credentials file not found: {oauth2_creds_path}\n"
+                        f"Please download OAuth2 credentials from Google Cloud Console"
                     )
 
-                credentials = Credentials.from_service_account_info(
-                    creds_info, scopes=["https://www.googleapis.com/auth/calendar"]
-                )
-                return credentials
-            except json.JSONDecodeError as e:
-                raise ValueError(
-                    f"Invalid JSON in GOOGLE_CREDENTIALS environment variable: {e}"
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    oauth2_creds_path, ["https://www.googleapis.com/auth/calendar"]
                 )
 
-        # If neither exists, error out with helpful message
-        raise ValueError(
-            f"Google credentials not found. Please either:\n"
-            f"1. Create a {default_creds_path} file in the project root, or\n"
-            f"2. Set the GOOGLE_CREDENTIALS environment variable"
-        )
+                # Check if we're running in GitHub Actions (no browser available)
+                if os.getenv("GITHUB_ACTIONS"):
+                    print("🤖 Running in GitHub Actions - using headless flow")
+                    # For GitHub Actions, we need to use a different approach
+                    # The token should already be provided via secrets
+                    raise ValueError(
+                        "Running in GitHub Actions but no valid token found.\n"
+                        "Please ensure GOOGLE_OAUTH_TOKEN secret is set correctly."
+                    )
+                else:
+                    print("🖥️  Running locally - opening browser for authentication")
+                    creds = flow.run_local_server(port=0)
+
+            # Save credentials for next run (only in local development)
+            if not os.getenv("GITHUB_ACTIONS"):
+                print(f"💾 Saving token to {token_path}")
+                with open(token_path, "wb") as token:
+                    pickle.dump(creds, token)
+
+        print("✅ Successfully loaded OAuth2 credentials")
+        return creds
 
     def _list_calendars(self):
         """List available calendars for debugging."""
@@ -191,23 +195,23 @@ class CalendarAutomation:
         print(f"       Final result: {result}")
         return result
 
-    def has_secondary_email_as_guest(self, event: Dict[str, Any]) -> bool:
-        """Check if secondary email is already a guest."""
+    def has_email_as_guest(self, event: Dict[str, Any], email: str) -> bool:
+        """Check if email is already a guest."""
         attendees = event.get("attendees", [])
         for attendee in attendees:
-            if attendee.get("email", "").lower() == self.secondary_email.lower():
+            if attendee.get("email", "").lower() == email.lower():
                 return True
         return False
 
-    def add_secondary_email_as_guest(self, event: Dict[str, Any]) -> bool:
-        """Add secondary email as guest to the event."""
+    def add_email_as_guest(self, event: Dict[str, Any], email: str) -> bool:
+        """Add email as guest to the event."""
         event_id = event["id"]
 
         # Get current attendees
         attendees = event.get("attendees", [])
 
-        # Add secondary email if not already present
-        attendees.append({"email": self.secondary_email, "responseStatus": "accepted"})
+        # Add email if not already present
+        attendees.append({"email": email, "responseStatus": "accepted"})
 
         # Update the event
         try:
@@ -217,9 +221,7 @@ class CalendarAutomation:
                 calendarId=self.primary_email, eventId=event_id, body=updated_event
             ).execute()
 
-            print(
-                f"✅ Added {self.secondary_email} to event: {event.get('summary', 'Untitled')}"
-            )
+            print(f"✅ Added {email} to event: {event.get('summary', 'Untitled')}")
             return True
 
         except HttpError as error:
@@ -238,29 +240,46 @@ class CalendarAutomation:
             return
 
         calendly_events = []
-        events_to_update = []
+        events_to_update_secondary = []
+        events_to_update_tertiary = []
 
         for event in events:
             if self.is_calendly_event(event):
                 calendly_events.append(event)
-                if not self.has_secondary_email_as_guest(event):
-                    events_to_update.append(event)
+                if not self.has_email_as_guest(event, self.secondary_email):
+                    events_to_update_secondary.append(event)
+                if not self.has_email_as_guest(event, self.tertiary_email):
+                    events_to_update_tertiary.append(event)
 
         print(f"📅 Found {len(calendly_events)} Calendly events")
-        print(f"🎯 {len(events_to_update)} events need secondary email added")
+        print(
+            f"🎯 {len(events_to_update_secondary)} events need {self.secondary_email} added"
+        )
+        print(
+            f"🎯 {len(events_to_update_tertiary)} events need {self.tertiary_email} added"
+        )
 
-        if not events_to_update:
-            print("✨ All Calendly events already have secondary email as guest!")
+        if not events_to_update_secondary and not events_to_update_tertiary:
+            print("✨ All Calendly events already have both emails as guests!")
             return
 
-        # Update events
-        successful_updates = 0
-        for event in events_to_update:
-            if self.add_secondary_email_as_guest(event):
-                successful_updates += 1
+        # Update events with secondary email
+        successful_secondary_updates = 0
+        for event in events_to_update_secondary:
+            if self.add_email_as_guest(event, self.secondary_email):
+                successful_secondary_updates += 1
+
+        # Update events with tertiary email
+        successful_tertiary_updates = 0
+        for event in events_to_update_tertiary:
+            if self.add_email_as_guest(event, self.tertiary_email):
+                successful_tertiary_updates += 1
 
         print(
-            f"🎉 Successfully updated {successful_updates}/{len(events_to_update)} events"
+            f"🎉 Successfully added {self.secondary_email} to {successful_secondary_updates}/{len(events_to_update_secondary)} events"
+        )
+        print(
+            f"🎉 Successfully added {self.tertiary_email} to {successful_tertiary_updates}/{len(events_to_update_tertiary)} events"
         )
 
 
@@ -275,8 +294,7 @@ def main():
         sys.exit(1)
 
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        sys.exit(1)
+        raise e
 
 
 if __name__ == "__main__":

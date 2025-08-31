@@ -100,6 +100,8 @@ ipython_config.py
 
 # Google credentials
 google-credentials.json
+oauth2_credentials.json
+token.pickle
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.

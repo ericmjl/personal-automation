@@ -10,23 +10,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Call Google Apps Script
+    - uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+
+    - name: Set up OAuth token
       run: |
-        # Get the web app URL from secrets
-        WEBAPP_URL="${{ secrets.GOOGLE_APPS_SCRIPT_URL }}"
+        echo "${{ secrets.GOOGLE_OAUTH_TOKEN }}" | base64 -d > token.pickle
 
-        if [ -z "$WEBAPP_URL" ]; then
-          echo "❌ GOOGLE_APPS_SCRIPT_URL secret not set"
-          exit 1
-        fi
-
-        echo "🔗 Calling Google Apps Script..."
-        response=$(curl -s "$WEBAPP_URL")
-
-        if [ $? -eq 0 ]; then
-          echo "✅ Script executed successfully"
-          echo "📊 Response: $response"
-        else
-          echo "❌ Failed to execute script"
-          exit 1
-        fi
+    - name: Run calendar automation
+      env:
+        PRIMARY_EMAIL: ${{ secrets.PRIMARY_EMAIL }}
+        SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
+        TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
+      run: uv run scripts/calendar_automation.py
