@@ -10,6 +10,10 @@
 # ///
 """
 GitHub Action script to automatically add secondary email as guest to Calendly events.
+
+Usage:
+    Run from the root of the repo:
+    uv run scripts/calendar_automation.py
 """
 
 import json
