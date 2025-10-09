@@ -179,6 +179,14 @@ class CalendarAutomation:
         location = event.get("location", "").lower()
 
         print(f"    🔍 Checking event: '{event.get('summary', 'No title')}'")
+
+        # First check if this is a buffer event - if so, exclude it
+        if "buffer" in summary:
+            print(
+                f"       ❌ Excluding buffer event: '{event.get('summary', 'No title')}'"
+            )
+            return False
+
         print(
             f"       Description contains 'calendly.com': {'calendly.com' in description}"
         )
