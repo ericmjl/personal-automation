@@ -112,7 +112,14 @@ class CalendarAutomation:
             )
         else:
             print("🖥️  Running locally - opening browser for authentication")
-            return flow.run_local_server(port=0)
+            print("📝 Requesting offline access for long-term automation...")
+            # Request offline access to get refresh token that doesn't expire
+            # Set prompt='consent' to force consent screen and ensure refresh token is returned
+            return flow.run_local_server(
+                port=0,
+                access_type='offline',
+                prompt='consent'
+            )
 
     def _list_calendars(self):
         """List available calendars for debugging."""
