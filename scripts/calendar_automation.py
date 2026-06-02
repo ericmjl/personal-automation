@@ -137,9 +137,9 @@ class CalendarAutomation:
             print(f"⚠️  Error listing calendars: {e}")
 
     def get_recent_events(
-        self, days_back: int = 7, days_forward: int = 30
+        self, days_back: int = 7, days_forward: int = 180
     ) -> List[Dict[str, Any]]:
-        """Get calendar events from the past week to next month."""
+        """Get calendar events from the past week to next 6 months."""
         now = datetime.now(timezone.utc)
         time_min = (now - timedelta(days=days_back)).isoformat()
         time_max = (now + timedelta(days=days_forward)).isoformat()
