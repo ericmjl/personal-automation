@@ -20,8 +20,15 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import List, Dict, Any
+from zoneinfo import ZoneInfo
+
+# The Moderna (tertiary) email may only be added to events falling within
+# standard US Eastern working hours.
+EASTERN_TZ = ZoneInfo("America/New_York")
+WORK_DAY_START = time(9, 0)
+WORK_DAY_END = time(17, 0)
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -285,6 +292,66 @@ class CalendarAutomation:
             )
             return False
 
+    @staticmethod
+    def is_within_moderna_hours(event: Dict[str, Any]) -> bool:
+        """Check if an event falls within 9am-5pm Mon-Fri US Eastern time.
+
+        The Moderna (tertiary) email should only be invited to events that fit
+        within standard working hours, so the work calendar is only blocked
+        during those hours. Events outside the window (evenings, weekends,
+        early mornings) must not carry the Moderna email.
+        """
+        summary = event.get("summary", "No title")
+        start_raw = event.get("start", {}).get("dateTime")
+        if not start_raw:
+            # All-day or date-only events: cannot confirm working hours.
+            print(f"       🕘 {summary}: no start time -> outside Moderna hours")
+            return False
+        try:
+            start = datetime.fromisoformat(start_raw)
+            end_raw = event.get("end", {}).get("dateTime")
+            end = datetime.fromisoformat(end_raw) if end_raw else start
+        except ValueError:
+            print(f"       ⚠️  {summary}: unparseable start/end -> outside Moderna hours")
+            return False
+
+        start_et = start.astimezone(EASTERN_TZ)
+        end_et = end.astimezone(EASTERN_TZ)
+        within = (
+            start_et.weekday() < 5
+            and end_et.weekday() < 5
+            and start_et.time() >= WORK_DAY_START
+            and end_et.time() <= WORK_DAY_END
+        )
+        print(
+            f"       🕘 {summary}: {start_et:%a %H:%M}-{end_et:%H:%M} ET -> "
+            f"within Moderna hours: {within}"
+        )
+        return within
+
+    def remove_email_as_guest(self, event: Dict[str, Any], email: str) -> bool:
+        """Remove email from the event's guests if present."""
+        event_id = event["id"]
+        attendees = event.get("attendees", [])
+        kept = [a for a in attendees if a.get("email", "").lower() != email.lower()]
+        if len(kept) == len(attendees):
+            return True  # email not present; nothing to do
+
+        try:
+            self.service.events().patch(
+                calendarId=self.primary_email,
+                eventId=event_id,
+                body={"attendees": kept},
+                sendUpdates="none",
+            ).execute()
+            print(f"✅ Removed {email} from event: {event.get('summary', 'Untitled')}")
+            return True
+        except HttpError as error:
+            print(
+                f"❌ Error updating event {event.get('summary', 'Untitled')}: {error}"
+            )
+            return False
+
     def process_calendly_events(self):
         """Main method to process Calendly events and add secondary email as guest."""
         print("🔍 Fetching recent calendar events...")
@@ -297,25 +364,40 @@ class CalendarAutomation:
         calendly_events = []
         events_to_update_secondary = []
         events_to_update_tertiary = []
+        events_to_strip_tertiary = []
 
         for event in events:
             if self.is_calendly_event(event):
                 calendly_events.append(event)
                 if not self.has_email_as_guest(event, self.secondary_email):
                     events_to_update_secondary.append(event)
-                if not self.has_email_as_guest(event, self.tertiary_email):
-                    events_to_update_tertiary.append(event)
+
+                # The Moderna (tertiary) email may only appear on events
+                # falling within 9am-5pm Mon-Fri US Eastern working hours;
+                # strip it from anything outside that window.
+                if self.is_within_moderna_hours(event):
+                    if not self.has_email_as_guest(event, self.tertiary_email):
+                        events_to_update_tertiary.append(event)
+                elif self.has_email_as_guest(event, self.tertiary_email):
+                    events_to_strip_tertiary.append(event)
 
         print(f"📅 Found {len(calendly_events)} Calendly events")
         print(
             f"🎯 {len(events_to_update_secondary)} events need {self.secondary_email} added"
         )
         print(
-            f"🎯 {len(events_to_update_tertiary)} events need {self.tertiary_email} added"
+            f"🎯 {len(events_to_update_tertiary)} events need {self.tertiary_email} added (9-5 M-F ET)"
+        )
+        print(
+            f"🎯 {len(events_to_strip_tertiary)} events need {self.tertiary_email} removed (outside 9-5 M-F ET)"
         )
 
-        if not events_to_update_secondary and not events_to_update_tertiary:
-            print("✨ All Calendly events already have both emails as guests!")
+        if (
+            not events_to_update_secondary
+            and not events_to_update_tertiary
+            and not events_to_strip_tertiary
+        ):
+            print("✨ All Calendly events already comply with the guest rules!")
             return
 
         # Update events with secondary email
@@ -330,11 +412,20 @@ class CalendarAutomation:
             if self.add_email_as_guest(event, self.tertiary_email):
                 successful_tertiary_updates += 1
 
+        # Strip tertiary email from events outside working hours
+        successful_tertiary_removals = 0
+        for event in events_to_strip_tertiary:
+            if self.remove_email_as_guest(event, self.tertiary_email):
+                successful_tertiary_removals += 1
+
         print(
             f"🎉 Successfully added {self.secondary_email} to {successful_secondary_updates}/{len(events_to_update_secondary)} events"
         )
         print(
             f"🎉 Successfully added {self.tertiary_email} to {successful_tertiary_updates}/{len(events_to_update_tertiary)} events"
+        )
+        print(
+            f"🎉 Successfully removed {self.tertiary_email} from {successful_tertiary_removals}/{len(events_to_strip_tertiary)} events"
         )
 
 
