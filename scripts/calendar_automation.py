@@ -18,6 +18,7 @@ Usage:
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
@@ -195,6 +196,25 @@ class CalendarAutomation:
         if "buffer" in summary:
             print(
                 f"       ❌ Excluding buffer event: '{event.get('summary', 'No title')}'"
+            )
+            return False
+
+        # Exclude canceled events. Calendly cancels a booking by renaming the
+        # GCal event to "Canceled: <original title>" (and marking attendees
+        # declined) while leaving the GCal event status as "confirmed", so we
+        # must check the title prefix. Also skip anything the Calendar API
+        # itself marks as cancelled (e.g. deleted recurring instances, which
+        # can leak through even with showDeleted=False).
+        if event.get("status") == "cancelled":
+            print(
+                f"       ❌ Excluding canceled event (status=cancelled): "
+                f"'{event.get('summary', 'No title')}'"
+            )
+            return False
+        if re.match(r"^\s*cancell?ed\s*:", event.get("summary", ""), re.IGNORECASE):
+            print(
+                f"       ❌ Excluding canceled event (title prefix): "
+                f"'{event.get('summary', 'No title')}'"
             )
             return False
 
