@@ -1,0 +1,14 @@
+scripts/calendar_automation.py
+  h_923f9eef54c2c1 23,25-31,295-354,367,374-382,389-392,395-400,415-420,427-429
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8f47873f45df9d96eb949c54186d0e896d6bf207",
+  "prompts": {},
+  "humans": {
+    "h_923f9eef54c2c1": {
+      "author": "Eric Ma <ericmajinglong@gmail.com>"
+    }
+  }
+}
