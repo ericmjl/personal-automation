@@ -1,0 +1,18 @@
+scripts/calendar_automation.py
+  h_923f9eef54c2c1 21,202-220
+scripts/cleanup_canceled_guests.py
+  h_923f9eef54c2c1 1-76
+scripts/diagnose_canceled.py
+  h_923f9eef54c2c1 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d78c55bfd187b7d504108d9a3f213ff380dd50c3",
+  "prompts": {},
+  "humans": {
+    "h_923f9eef54c2c1": {
+      "author": "Eric Ma <ericmajinglong@gmail.com>"
+    }
+  }
+}
